@@ -73,7 +73,7 @@ __device__ void displayMatrix(int tx, int ty, int judgeA, int judgeB, cuDoubleCo
 
 /*
  * @brief  calculate RD array
- * 
+ *         using shared memory to complete whole process
  * @param dev_sig       input 8 channel signal
  * @param dev_window_h  input window function
  * @param dev_x_ref     input reference signal
@@ -173,64 +173,57 @@ __global__ void calcu2DArray(cuDoubleComplex* dev_sig, cuDoubleComplex* dev_wind
     Complex window_elem = make_cuDoubleComplex(0.0, 0.0);
     Complex exp_elem = make_cuDoubleComplex(0.0, 0.0);
     Complex sig_elem = make_cuDoubleComplex(0.0, 0.0);
-    for (int i = 0; i < 1; i++)
+    for (int i = 0; i < 8; i++)
     {
-      for (int j = 0; j < 1; j++)
+      for (int j = 0; j < minor_dim; j++)
       {
-        for (int k = ty; k < THREAD_NUM_IN_BLOCK; k += blockDim.y)
+        for (int k = ty; k < THREAD_NUM_IN_BLOCK; k+=blockDim.y)
         {
-          if (k < 3)
-          {
-              exp_elem = shared_exp[k * THREAD_NUM_IN_BLOCK + tx];
-          }
+          // for (int x = tx; x < THREAD_NUM_IN_BLOCK; x+=blockDim.x)
+          // {
+          exp_elem = shared_exp[j * THREAD_NUM_IN_BLOCK + tx];
+          window_elem = shared_window[tx];
+          sig_elem = shared_sig[i * THREAD_NUM_IN_BLOCK + tx];
+          Complex xref_elem = shared_xref[k * THREAD_NUM_IN_BLOCK + tx];
+          Complex sum_elem = cuCmul(xref_elem, cuCmul(exp_elem, cuCmul(sig_elem, window_elem)));
+          sum = cuCadd(sum, sig_elem);
           
+          if (global_tid_x < N && global_tid_y < major_dim)
+          {
+            dev_rd_array[i * minor_dim * major_dim + j * major_dim + ty] = cuCadd(sum, dev_rd_array[i * minor_dim * major_dim + j * major_dim + ty]);
+          }
+  
           // if (blockIdx.x == 0 && threadIdx.y == 0)
           // {
           //   printf("exp_elem: %.8f , %.8f\n", exp_elem.x, exp_elem.y);
           // }
-          if (k < 1)
-          {
-            window_elem = shared_window[tx];
-          }
-          // if (blockIdx.x == 0 && threadIdx.y == 0)
-          // {
-          //   printf("window_elem: %.8f , %.8f\n", window_elem.x, window_elem.y);
-          // }
-          sig_elem = shared_sig[i * THREAD_NUM_IN_BLOCK + tx];
+
           // if (blockIdx.x == 0 && blockIdx.y == 0)
           // {
           //   printf("threadIdx.y = %d  sig_elem: %.8f , %.8f\n", global_tid_y, sig_elem.x, sig_elem.y);
-          // }                
-
-          Complex xref_elem = shared_xref[ty * THREAD_NUM_IN_BLOCK + tx];
+          // }
+  
           // if (blockIdx.x == 0 && threadIdx.y == 0)
           // {
           //   printf("xref_elem: %.8f , %.8f\n", xref_elem.x, xref_elem.y);
-          // }            
-          Complex sum_elem = cuCmul(xref_elem, cuCmul(exp_elem, cuCmul(sig_elem, window_elem)));
+          // }
+          
           // if (blockIdx.x == 0 && threadIdx.y == 0)
           // {
           //   printf("sum_elem: %.16f , %.16f\n", sum_elem.x, sum_elem.y);
+          // }  
+
+          // if (blockIdx.x == 0 && threadIdx.y == 0)
+          // {
+          //   printf("  __thread_x__thread_y:%d, %d  sum: %.8f , %.8f", global_tid_x, global_tid_y, sum.x, sum.y);
           // }
-          sum = cuCadd(sum, sig_elem);
-          if (blockIdx.x == 0 && blockIdx.y == 0)
-          {
-            printf("  __thread_x__thread_y:%d, %d  sum: %.8f , %.8f", global_tid_x, global_tid_y, sum.x, sum.y);
-          }
-          if (global_tid_x < N && global_tid_y < major_dim)
-          {
-            if (blockIdx.x == 0 && blockIdx.y == 0)
-            {
-              // printf(" __thread_x__thread_y:%d, %d , sig_elem: %.8f, %.8f", global_tid_x, global_tid_y, sig_elem.x, sig_elem.y);
-              dev_rd_array[i * major_dim * minor_dim + global_tid_x * major_dim + global_tid_y] = cuCadd(sum, dev_rd_array[i * major_dim * minor_dim + global_tid_x * major_dim + global_tid_y]);
-            }
-          }
-        }
+        // }
+      }
       }
     }
-        if (global_tid_x == 0 && global_tid_y == 0)
+    if (global_tid_x == 0 && global_tid_y == 0)
     {
-        printf("conv calculation in shared memory finished...\n");
+      printf("conv calculation in shared memory finished...\n");
     }
 }
 
