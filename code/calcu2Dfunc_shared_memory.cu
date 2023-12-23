@@ -172,27 +172,24 @@ __global__ void calcu2DArray(cuDoubleComplex* dev_sig, cuDoubleComplex* dev_wind
         printf("ready to start conv calculation in shared memory...\n");
     }
 
-    Complex window_elem = make_cuDoubleComplex(0.0, 0.0);
-    Complex exp_elem = make_cuDoubleComplex(0.0, 0.0);
-    Complex sig_elem = make_cuDoubleComplex(0.0, 0.0);
-    Complex xref_elem = make_cuDoubleComplex(0.0, 0.0);
+
     for (int i = 0; i < 8; i++)
     {
       for (int j = 0; j < minor_dim; j++)
       {
-        for (int k = ty; k < THREAD_NUM_IN_BLOCK; k+=blockDim.y)
-        {
+          Complex window_elem = shared_window[tx];
+          Complex sig_elem = shared_sig[i * THREAD_NUM_IN_BLOCK + tx];
+          Complex exp_elem = shared_exp[j * THREAD_NUM_IN_BLOCK + tx];
+          Complex xref_elem = shared_xref[ty * THREAD_NUM_IN_BLOCK + tx];
 
-          window_elem = shared_window[tx];
-          sig_elem = shared_sig[i * THREAD_NUM_IN_BLOCK + tx];
-          exp_elem = shared_exp[j * THREAD_NUM_IN_BLOCK + tx];
-          xref_elem = shared_xref[k * THREAD_NUM_IN_BLOCK + tx];
           // if (blockIdx.x == 0 && blockIdx.y == 0)
           // {
-          //   printf("threadIdx.y = %d  window_elem: %.12f , %.12f\n", global_tid_y, window_elem.x, window_elem.y);
+          //   printf("threadIdx.y = %d  xref_elem: %.12f , %.12f\n", global_tid_y, xref_elem.x, xref_elem.y);
           // }
+
+          Complex sum = cuCmul(xref_elem, cuCmul(exp_elem, cuCmul(sig_elem, window_elem)));
           
-          dev_rd_array[i * minor_dim * major_dim + j * major_dim + global_tid_y] = cuCadd(cuCmul(xref_elem, cuCmul(exp_elem, cuCmul(sig_elem, window_elem))), dev_rd_array[i * minor_dim * major_dim + j * major_dim + global_tid_y]);
+          dev_rd_array[i * minor_dim * major_dim + j * major_dim + global_tid_y] = cuCadd(sum, dev_rd_array[i * minor_dim * major_dim + j * major_dim + global_tid_y]);
 
           // if (blockIdx.x == 0 && threadIdx.y == 0)
           // {
@@ -218,8 +215,8 @@ __global__ void calcu2DArray(cuDoubleComplex* dev_sig, cuDoubleComplex* dev_wind
           // {
           //   printf("  __thread_x__thread_y:%d, %d  sum: %.8f , %.8f", global_tid_x, global_tid_y, sum.x, sum.y);
           // }
-          __syncthreads();
-        }
+        
+        __syncthreads();
       }
     }
     if (global_tid_x == 0 && global_tid_y == 0)
@@ -277,7 +274,6 @@ void calcuTwoDimRd(double* sig, double* sig_imag,
   // {
   //   printf("x_ref_vec: %.8f, %.8f \n", x_ref_vec[i].x, x_ref_vec[i].y);
   // }
-  
 
 	// init exp_val xref_val
 	cuDoubleComplex* exp_val = new cuDoubleComplex[(2 * K + 1) * N];
@@ -397,7 +393,6 @@ void calcuTwoDimRd(double* sig, double* sig_imag,
   }
 
   outArrayToFile("rd_output_real.txt", "rd_output_img.txt", out, 163, 1);
-  
 
 	cudaFree(dev_rd_array);
 	cudaFree(dev_sig);
